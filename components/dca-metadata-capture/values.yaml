@@ -1,0 +1,537 @@
+# Default values for dca-metadata-capture.
+# This is a YAML-formatted file.
+# Declare variables to be passed into your templates.
+
+name: dca-metadata-capture
+replicaCount: 1
+
+image:
+  repository: ds4h-registry:5432/dca-metadata-capture
+  pullPolicy: Always
+  # Overrides the image tag whose default is the chart appVersion.
+  tag: "0.0.0"
+
+imagePullSecrets: []
+nameOverride: ""
+# fullnameOverride: "dca-metadata-capture"
+
+serviceAccount:
+  # Specifies whether a service account should be created
+  create: false
+  annotations: {}
+  name: ""
+
+podAnnotations: {}
+
+podSecurityContext:
+  allowPrivilegeEscalation: false
+
+securityContext: {}
+
+service:
+  type: ClusterIP
+  port: 8000
+
+ingress:
+  enabled: true
+  className: ""
+  annotations: {}
+  hosts:
+    - host: null
+      paths:
+        - path: /dca
+          pathType: Prefix
+        - path: /assets
+          pathType: Prefix
+  # Traefik replacePathRegex middleware: strips /dca prefix before forwarding to the app
+  replacePath:
+    regex: ^/dca/?(.*)
+    replacement: /${1}
+  tls:
+    - secretName: dataspace4health.local
+      hosts:
+        - dataspace4health.local
+
+resources: {}
+  # limits:
+  #   cpu: 500m
+  #   memory: 512Mi
+  # requests:
+  #   cpu: 250m
+  #   memory: 256Mi
+
+probes:
+  path: /api/health
+  initialDelaySeconds: 30
+  periodSeconds: 30
+
+autoscaling:
+  enabled: false
+  minReplicas: 1
+  maxReplicas: 10
+  targetCPUUtilizationPercentage: 80
+
+nodeSelector: {}
+tolerations: []
+affinity:
+  podAntiAffinity:
+    preferredDuringSchedulingIgnoredDuringExecution:
+      - weight: 100
+        podAffinityTerm:
+          labelSelector:
+            matchExpressions:
+              - key: app
+                operator: In
+                values:
+                  - dca-metadata-capture
+          topologyKey: "kubernetes.io/hostname"
+
+restartPolicy: Always
+
+# -----------------------------------------------------------------------
+# Application configuration
+# -----------------------------------------------------------------------
+config:
+  # Path where config.json is mounted inside the container
+  configPath: /config/config.json
+  # Runtime environment (production | development)
+  environment: production
+  # Public URL of the application (used for CORS, redirects, etc.)
+  appUrl: https://dataspace4health.local/dca
+  # Set to "True" to run initial_data.sql during the Alembic migration step.
+  # Safe to leave enabled on every deployment — all inserts use ON CONFLICT DO NOTHING.
+  loadInitialData: "True"
+  # Set to true to run demo_env_seed.py as an init container.
+  # Creates a sample organisation, contacts, applicable legislation and datasets.
+  # Intended for non-production / first-time setup. Uses create-or-find logic.
+  seedDemoData: true
+  # Log format: json (structured) or text
+  logFormat: json
+  logLevel: INFO
+  # Subpath the app is mounted at (passed to uvicorn --root-path so FastAPI
+  # generates correct redirect URLs and OpenAPI docs links)
+  rootPath: "/dca"
+
+# OpenID Connect / Keycloak settings
+oidc:
+  # Client ID registered in Keycloak — matches the e2e realm
+  clientId: dca-metadata-capture-local
+  # Set clientSecret in secrets.oidcClientSecret below
+  # Local Keycloak realm: dca-metadata-capture-local
+  authUrl: https://dataspace4health.local/iam/realms/dca-metadata-capture-local/protocol/openid-connect/auth
+  tokenUrl: https://dataspace4health.local/iam/realms/dca-metadata-capture-local/protocol/openid-connect/token
+  jwksUrl: https://dataspace4health.local/iam/realms/dca-metadata-capture-local/protocol/openid-connect/certs
+  endSessionUrl: https://dataspace4health.local/iam/realms/dca-metadata-capture-local/protocol/openid-connect/logout
+  # "False"           → skip TLS verification (dev/test)
+  # "/path/to/ca.crt" → path to a CA bundle mounted in the container (production)
+  # NOTE: do NOT use "True" — the app passes this value directly to httpx's
+  #       verify parameter, so a non-False string is treated as a CA cert file path.
+  verify: "False"
+
+# SMTP configuration (for email notifications)
+smtp:
+  server: smtp.local
+  port: "587"
+  username: smtp-user
+  senderEmail: no-reply@dca-metadata-capture.local
+
+# OpenTelemetry (optional tracing)
+otlp:
+  url: ""
+  token: ""
+
+# Front-office FTPS upload (optional)
+frontOffice:
+  host: ""
+  port: "21"
+  user: ""
+  uploadPath: ""
+
+# Anti-virus scan API (optional)
+avscan:
+  apiUrl: ""
+  apiKey: ""
+
+# Legilux SPARQL endpoint (optional)
+legilux:
+  endpoint: https://data.legilux.public.lu/sparqlendpoint
+
+# EUR-Lex Web Service credentials (optional)
+eurlex:
+  username: ""
+  password: ""
+
+# Celery background jobs (optional) – requires a Redis instance
+celery:
+  enabled: false
+  brokerUrl: redis://redis:6379/0
+  resultBackend: redis://redis:6379/1
+  importDatasetsCronSchedule: "*/5"
+
+# Source instance for dataset syncing (optional)
+sourceInstance:
+  url: ""
+  name: ""
+  datasetUrlPattern: "/?datasetId={id}"
+  syncUserId: "1"
+  oidcIssuerUrl: ""
+  serviceAccountClientId: ""
+
+# S3 / object storage (optional)
+s3:
+  bucket: ""
+  endpointUrl: ""
+  accessKeyId: ""
+
+# Default access URL for distributions
+defaultAccessUrl: ""
+
+# -----------------------------------------------------------------------
+# Secrets – override these with proper values or use an external
+# secrets manager (e.g. Vault / External Secrets Operator)
+# -----------------------------------------------------------------------
+secrets:
+  # OIDC client secret — matches dca-metadata-capture-local client in Keycloak realm
+  oidcClientSecret: "ypctz2GbUYM4qNMg48BRGNfVzgFTINzJ"
+  # Session encryption keys (use strong random strings ≥ 32 chars)
+  sessionSecretKey: "change-me-session-secret-key"
+  sessionEncryptionKey: "change-me-session-encryption-key"
+  # SMTP password
+  smtpPassword: ""
+  # S3 secret access key
+  s3SecretAccessKey: ""
+  # Source instance service account client secret
+  sourceServiceAccountClientSecret: ""
+  # EUR-Lex password (duplicated here for Secret injection)
+  eurlexPassword: ""
+
+# -----------------------------------------------------------------------
+# PostgreSQL dependency (Bitnami chart)
+# -----------------------------------------------------------------------
+postgresql:
+  enabled: true
+  image:
+    registry: bitnamilegacy
+    repository: postgresql
+    tag: 16.2.0-debian-12-r8
+  auth:
+    username: dca
+    password: "dca-secret!"
+    database: dca-metadata-capture
+    postgresPassword: "postgres-secret!"
+  primary:
+    persistence:
+      enabled: true
+      size: 5Gi
+
+# -----------------------------------------------------------------------
+# Config JSON – contents of config.json mounted at configPath.
+# Override in a custom values file if needed.
+# -----------------------------------------------------------------------
+configJson: |
+  {
+    "config_version": "1.0",
+    "app_title": "Dataset Metadata Capture",
+    "feature_flags": {
+      "enable_validation_via_group_manager": true,
+      "enable_duration_of_data": true,
+      "enable_conventions": true,
+      "enable_area_of_work_and_competence": true,
+      "enable_distribution_path": true,
+      "enable_notes": false,
+      "enable_distribution_notes": false,
+      "enable_monitoring_location": true,
+      "enable_authentic_source": true,
+      "enable_multi_tenants": true,
+      "enable_dual_instance": false,
+      "enable_upload_datasets_to_front_office": true
+    },
+    "default_themes": [],
+    "catalogue": {
+      "name": "Dataset Metadata Catalogue",
+      "description": "Dataset metadata capture application",
+      "publisher_name": "Publisher",
+      "url": "https://dataspace4health.local/dca",
+      "uri_templates": {
+        "datasets": "/datasets/{identifier}",
+        "data_services": "/data-services/{id}",
+        "sample_distribution_download": "/datasets/{identifier}/data-dictionaries/download"
+      }
+    },
+    "unauthorised_message": "Please contact your administrator to gain access to this application.",
+    "technical_support_message": "For technical support, contact your administrator.",
+    "conventions": [],
+    "areas_of_work": [
+      {"key": "autorisations_certificats_subventions", "eng_label": "Autorisations, certificats et subventions"},
+      {"key": "conseils_politiques_strategies_concepts", "eng_label": "Conseils politiques, stratégies et concepts"},
+      {"key": "gouvernance_information_sensibilisation", "eng_label": "Gouvernance Information et sensibilisation"},
+      {"key": "inspections_controles", "eng_label": "Inspections et contrôles"},
+      {"key": "surveillance_evaluation", "eng_label": "Surveillance et évaluation"}
+    ],
+    "areas_of_competence": [
+      {"key": "bruit", "eng_label": "Bruit"},
+      {"key": "dechets_ressources", "eng_label": "Déchets et ressources"},
+      {"key": "procedures_administratives", "eng_label": "Procédures administratives"},
+      {"key": "protection_des_sols_et_gestion_des_sites_contamines", "eng_label": "Protection des sols et gestion des sites contaminés"},
+      {"key": "qualite_air", "eng_label": "Qualité de l'air"}
+    ],
+    "distribution_path": [
+      {"key": "external_inspire_portal", "eng_label": "External Inspire Portal"},
+      {"key": "external_open_data", "eng_label": "External Open Data"},
+      {"key": "external_geoportal", "eng_label": "External Geoportal"},
+      {"key": "external_emwelt", "eng_label": "External Emwelt"},
+      {"key": "external_official_reporting", "eng_label": "External Official Reporting"},
+      {"key": "internal", "eng_label": "Internal"},
+      {"key": "external_lndc", "eng_label": "External LNDC"}
+    ],
+    "roles_path_in_access_token": "resource_access.{client_id}.roles",
+    "disable_email_for_roles": [],
+    "roles": [
+      {
+        "name": "BOT_USER",
+        "permissions": ["system:admin", "datasets:read:published"]
+      },
+      {
+        "name": "CONTRIBUTOR",
+        "permissions": [
+          "datasets:edit:draft:my",
+          "datasets:delete:draft:my",
+          "datasets:read:all-after-complete",
+          "datasets:status-change:complete:my"
+        ]
+      },
+      {
+        "name": "OBSERVER",
+        "permissions": [
+          "datasets:edit:draft:my",
+          "datasets:read:all-after-draft",
+          "datasets:status-change:complete:my"
+        ]
+      },
+      {
+        "name": "GROUP_MANAGER",
+        "permissions": [
+          "datasets:edit:draft:my",
+          "datasets:edit:draft:group",
+          "datasets:read:all-after-complete",
+          "datasets:status-change:validate:group",
+          "datasets:status-change:complete:group",
+          "datasets:status-change:draft:group"
+        ]
+      },
+      {
+        "name": "DATA_MANAGER",
+        "iam_role_name": "DATA_MANAGER",
+        "permissions": [
+          "datasets:edit:draft",
+          "datasets:delete:draft",
+          "datasets:read:all-after-draft",
+          "datasets:status-change:complete",
+          "datasets:status-change:draft",
+          "datasets:status-change:validate",
+          "datasets:status-change:approve",
+          "datasets:status-change:publish",
+          "datasets:status-change:internal-only",
+          "datasets:status-change:deprecate",
+          "form-fields:edit",
+          "organisations:edit",
+          "catalogue:generate-rdf",
+          "catalogue:upload-rdf:s3",
+          "roles:manage"
+        ]
+      },
+      {
+        "name": "CATALOGUE_MANAGER",
+        "permissions": [
+          "datasets:edit:draft",
+          "datasets:delete:draft",
+          "datasets:read:all-after-draft",
+          "datasets:status-change:complete",
+          "datasets:status-change:draft",
+          "datasets:status-change:validate",
+          "datasets:status-change:approve",
+          "datasets:status-change:publish",
+          "datasets:status-change:internal-only",
+          "datasets:status-change:deprecate",
+          "form-fields:edit",
+          "organisations:edit",
+          "contacts:edit",
+          "catalogue:generate-rdf",
+          "catalogue:upload-rdf:s3",
+          "roles:manage",
+          "authentic-source:assign",
+          "comments:delete"
+        ]
+      },
+      {
+        "name": "INVENTORY_COORDINATOR",
+        "permissions": [
+          "datasets:read:all-after-draft",
+          "datasets:status-change:validate",
+          "datasets:status-change:complete",
+          "form-fields:edit:organisation",
+          "contacts:edit:organisation",
+          "organisations:edit:organisation",
+          "datasets:read:published",
+          "roles:manage:organisation"
+        ]
+      },
+      {
+        "name": "METADATA_EDITOR",
+        "permissions": [
+          "datasets:edit:draft:organisation",
+          "datasets:delete:draft:organisation",
+          "datasets:read:all-after-draft:organisation",
+          "datasets:status-change:complete:my",
+          "datasets:status-change:complete:organisation",
+          "datasets:read:published",
+          "form-fields:edit:my",
+          "contacts:edit:organisation"
+        ]
+      },
+      {
+        "name": "METADATA_REVIEWER",
+        "permissions": [
+          "datasets:read:all-after-draft:organisation",
+          "datasets:read:completed",
+          "datasets:read:validated",
+          "datasets:read:published",
+          "datasets:status-change:validate",
+          "form-fields:edit:my"
+        ]
+      },
+      {
+        "name": "METADATA_APPROVER",
+        "permissions": [
+          "datasets:read:all-after-draft:organisation",
+          "datasets:read:validated",
+          "datasets:read:approved",
+          "datasets:read:published",
+          "datasets:status-change:approve",
+          "datasets:status-change:internal-only"
+        ]
+      }
+    ],
+    "email_templates": {
+      "DATASET_COMPLETED": {
+        "subject": "Dataset Completed: $dataset_title",
+        "body": "Dear $recipient_name,\n\nA dataset has been submitted and is ready for validation.\n\nDataset: $dataset_title\nLink: $dataset_link\n\nPlease review and validate this dataset at your earliest convenience.\n\nThank you"
+      },
+      "DATASET_VALIDATED": {
+        "subject": "Dataset Ready for Approval: $dataset_title",
+        "body": "Dear $recipient_name,\n\nA dataset has been validated and is ready for your approval.\n\nDataset: $dataset_title\nLink: $dataset_link\n\nPlease review and approve this dataset at your earliest convenience.\n\nThank you"
+      },
+      "DATASET_APPROVED": {
+        "subject": "Dataset Approved: $dataset_title",
+        "body": "Dear $recipient_name,\n\nA dataset has been approved.\n\nDataset: $dataset_title\nLink: $dataset_link\n\nThank you"
+      },
+      "DATASET_BACK_TO_DRAFT": {
+        "subject": "Dataset Returned to Draft: $dataset_title",
+        "body": "Dear $recipient_name,\n\nA dataset has been returned to draft status.\n\nDataset: $dataset_title\nLink: $dataset_link\n\nPlease review and resubmit this dataset at your earliest convenience.\n\nThank you"
+      },
+      "DATASET_PUBLISHED": {
+        "subject": "Dataset Published: $dataset_title",
+        "body": "Dear $recipient_name,\n\nA dataset has been published.\n\nDataset: $dataset_title\nLink: $dataset_link\n\nThank you"
+      },
+      "DATASET_MARKED_AS_INTERNAL": {
+        "subject": "Dataset Marked as Internal: $dataset_title",
+        "body": "Dear $recipient_name,\n\nA dataset has been marked as internal.\n\nDataset: $dataset_title\nLink: $dataset_link\n\nThank you"
+      },
+      "DATASET_DEPRECATED": {
+        "subject": "Dataset Deprecated: $dataset_title",
+        "body": "Dear $recipient_name,\n\nA dataset has been deprecated.\n\nDataset: $dataset_title\nLink: $dataset_link\n\nThank you"
+      },
+      "DATASET_DEPRECATED_WITH_NEW_VERSION": {
+        "subject": "Dataset Deprecated: $dataset_title",
+        "body": "Dear $recipient_name,\n\nThe dataset \"$dataset_title\" has been deprecated as a new version is now available.\n\nDeprecated Dataset: $dataset_title\nLink: $dataset_link\n\nNew Version: $newer_dataset_title\nLink: $newer_dataset_link\n\nThank you"
+      },
+      "ROLE_ASSIGNED": {
+        "subject": "Role Assignment Notification: $role_name for $target_user_name",
+        "body": "Dear $recipient_name,\n\nA role has been assigned in the system.\n\nUser: $target_user_name ($target_user_email)\nRole: $role_name\nOrganisation: $organisation_name\nAssigned by: $assigner_name\n\nYou can visit the application at: $app_url\n\nThank you"
+      },
+      "AUTHENTIC_SOURCE_ASSIGNMENT_CHANGED": {
+        "subject": "Authentic Source Assignment Changed: $dataset_title",
+        "body": "Dear $recipient_name,\n\nAuthentic source label assignments have been modified for a dataset.\n\nDataset: $dataset_title\nLink: $dataset_link\n\nChanges made:\n$changes_summary\n\nModified by: $assigner_name\n\nThank you"
+      },
+      "KEYWORD_PROMOTED_TO_GLOBAL": {
+        "subject": "Keyword Promoted to Global: $keyword_name",
+        "body": "Dear $recipient_name,\n\nThe keyword \"$keyword_name\" from your organisation has been promoted to global status by $promoter_name.\n\nThank you"
+      }
+    }
+  }
+
+# -----------------------------------------------------------------------
+# Global security – allow non-standard (bitnamilegacy) container images
+# -----------------------------------------------------------------------
+global:
+  security:
+    allowInsecureImages: true
+
+# Controls whether the Keycloak realm JSON ConfigMap is embedded in the
+# chart itself (true) or managed externally via kubectl (false).
+# Because the realm JSON exceeds Helm's value-size limits the Makefile
+# always creates the ConfigMap with kubectl; set this to false.
+createRealmConfigMap: false
+
+# -----------------------------------------------------------------------
+# Keycloak dependency (Bitnami chart)
+# -----------------------------------------------------------------------
+keycloak:
+  enabled: true
+  image:
+    registry: bitnamilegacy
+    repository: keycloak
+    tag: 26.3.3-debian-12-r0
+  auth:
+    adminUser: admin
+    adminPassword: "xfsc4Ntt!"
+  extraEnvVars:
+    - name: KEYCLOAK_EXTRA_ARGS
+      value: "--import-realm"
+    - name: PROXY_ADDRESS_FORWARDING
+      value: "true"
+    - name: KC_HOSTNAME
+      value: "https://dataspace4health.local/iam"
+  extraVolumeMounts:
+    - name: config
+      mountPath: "/opt/bitnami/keycloak/data/import/dca-metadata-capture-local-realm.json"
+      subPath: "dca-metadata-capture-local-realm.json"
+      readOnly: true
+  extraVolumes:
+    - name: config
+      configMap:
+        name: keycloak-realm
+        items:
+          - key: "dca-metadata-capture-local-realm.json"
+            path: "dca-metadata-capture-local-realm.json"
+  logging:
+    level: "INFO"
+  production: false
+  proxy: edge
+  # Keycloak will be accessible at /iam/
+  httpRelativePath: "/iam/"
+  postgresql:
+    enabled: true
+    nameOverride: keycloak-postgresql
+    image:
+      registry: bitnamilegacy
+      repository: postgresql
+      tag: 16.2.0-debian-12-r8
+    auth:
+      database: keycloak
+      username: keycloak
+      password: "xfsc4Ntt!"
+      postgresPassword: "xfsc4Ntt!"
+    primary:
+      persistence:
+        size: 5Gi
+  ingress:
+    enabled: true
+    hostname: dataspace4health.local
+    annotations:
+      kubernetes.io/ingress.class: traefik
+    tls: true
+    extraTls:
+      - hosts:
+          - dataspace4health.local
+        secretName: dataspace4health.local

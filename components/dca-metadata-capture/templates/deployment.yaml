@@ -1,0 +1,312 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "app.fullname" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "app.labels" . | nindent 4 }}
+spec:
+  {{- if not .Values.autoscaling.enabled }}
+  replicas: {{ .Values.replicaCount }}
+  {{- end }}
+  selector:
+    matchLabels:
+      {{- include "app.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      {{- with .Values.podAnnotations }}
+      annotations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      labels:
+        {{- include "app.selectorLabels" . | nindent 8 }}
+    spec:
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      serviceAccountName: {{ include "app.serviceAccountName" . }}
+      securityContext:
+        {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      initContainers:
+        # Run Alembic database migrations before the app starts.
+        # When LOAD_INITIAL_DATA=True the migration also executes initial_data.sql
+        # (idempotent: all inserts use ON CONFLICT DO NOTHING).
+        - name: db-migrate
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          command: ["alembic", "upgrade", "head"]
+          env:
+            - name: DATABASE_URL
+              value: {{ include "app.databaseUrl" . | quote }}
+            - name: MIGRATION_DATABASE_URL
+              value: {{ include "app.databaseUrl" . | quote }}
+            - name: ENVIRONMENT
+              value: {{ .Values.config.environment | quote }}
+            - name: LOAD_INITIAL_DATA
+              value: {{ .Values.config.loadInitialData | quote }}
+            # Secrets
+            - name: SESSION_SECRET_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "app.fullname" . }}-secret
+                  key: session-secret-key
+            - name: SESSION_ENCRYPTION_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "app.fullname" . }}-secret
+                  key: session-encryption-key
+        {{- if .Values.config.seedDemoData }}
+        # Run the demo seed script to create sample organisations, contacts,
+        # applicable legislation and datasets. Uses create-or-find logic so it
+        # is safe to re-run, but intended primarily for non-production environments.
+        - name: db-seed
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          command: ["python", "demo_env_seed.py"]
+          workingDir: /code
+          env:
+            - name: DATABASE_URL
+              value: {{ include "app.databaseUrl" . | quote }}
+            - name: ENVIRONMENT
+              value: {{ .Values.config.environment | quote }}
+            - name: SESSION_SECRET_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "app.fullname" . }}-secret
+                  key: session-secret-key
+            - name: SESSION_ENCRYPTION_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "app.fullname" . }}-secret
+                  key: session-encryption-key
+        {{- end }}
+      containers:
+        - name: {{ include "app.fullname" . }}
+          securityContext:
+            {{- toYaml .Values.securityContext | nindent 12 }}
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          env:
+            # ── Application ──────────────────────────────────────────────
+            - name: CONFIG_PATH
+              value: {{ .Values.config.configPath | quote }}
+            - name: ENVIRONMENT
+              value: {{ .Values.config.environment | quote }}
+            - name: APP_URL
+              value: {{ .Values.config.appUrl | quote }}
+            - name: LOAD_INITIAL_DATA
+              value: {{ .Values.config.loadInitialData | quote }}
+            - name: LOG_FORMAT
+              value: {{ .Values.config.logFormat | quote }}
+            - name: LOG_LEVEL
+              value: {{ .Values.config.logLevel | quote }}
+            - name: VITE_BASE_URL
+              value: {{ .Values.config.rootPath | quote }}
+
+            # ── Database ─────────────────────────────────────────────────
+            - name: DATABASE_URL
+              value: {{ include "app.databaseUrl" . | quote }}
+            - name: MIGRATION_DATABASE_URL
+              value: {{ include "app.databaseUrl" . | quote }}
+
+            # ── OpenID Connect ───────────────────────────────────────────
+            - name: OPENID_CLIENT_ID
+              value: {{ .Values.oidc.clientId | quote }}
+            - name: OPENID_CLIENT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "app.fullname" . }}-secret
+                  key: oidc-client-secret
+            - name: OPENID_AUTH_URL
+              value: {{ .Values.oidc.authUrl | quote }}
+            - name: OPENID_TOKEN_URL
+              value: {{ .Values.oidc.tokenUrl | quote }}
+            - name: OPENID_JWKS_URL
+              value: {{ .Values.oidc.jwksUrl | quote }}
+            - name: OPENID_END_SESSION_URL
+              value: {{ .Values.oidc.endSessionUrl | quote }}
+            - name: OPENID_VERIFY
+              value: {{ .Values.oidc.verify | quote }}
+
+            # ── Session ──────────────────────────────────────────────────
+            - name: SESSION_SECRET_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "app.fullname" . }}-secret
+                  key: session-secret-key
+            - name: SESSION_ENCRYPTION_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "app.fullname" . }}-secret
+                  key: session-encryption-key
+
+            # ── SMTP ─────────────────────────────────────────────────────
+            - name: SMTP_SERVER
+              value: {{ .Values.smtp.server | quote }}
+            - name: SMTP_PORT
+              value: {{ .Values.smtp.port | quote }}
+            - name: SMTP_USERNAME
+              value: {{ .Values.smtp.username | quote }}
+            - name: SENDER_EMAIL
+              value: {{ .Values.smtp.senderEmail | quote }}
+            - name: SMTP_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "app.fullname" . }}-secret
+                  key: smtp-password
+
+            # ── OpenTelemetry (optional) ──────────────────────────────────
+            {{- if .Values.otlp.url }}
+            - name: OTL_URL
+              value: {{ .Values.otlp.url | quote }}
+            - name: OTL_TOKEN
+              value: {{ .Values.otlp.token | quote }}
+            {{- end }}
+
+            # ── Front-Office FTPS (optional) ─────────────────────────────
+            {{- if .Values.frontOffice.host }}
+            - name: FRONT_OFFICE_HOST
+              value: {{ .Values.frontOffice.host | quote }}
+            - name: FRONT_OFFICE_PORT
+              value: {{ .Values.frontOffice.port | quote }}
+            - name: FRONT_OFFICE_USER
+              value: {{ .Values.frontOffice.user | quote }}
+            - name: FRONT_OFFICE_UPLOAD_PATH
+              value: {{ .Values.frontOffice.uploadPath | quote }}
+            - name: FRONT_OFFICE_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "app.fullname" . }}-secret
+                  key: front-office-password
+                  optional: true
+            {{- end }}
+
+            # ── Anti-Virus Scan (optional) ────────────────────────────────
+            {{- if .Values.avscan.apiUrl }}
+            - name: AVSCAN_API_URL
+              value: {{ .Values.avscan.apiUrl | quote }}
+            - name: AVSCAN_API_KEY
+              value: {{ .Values.avscan.apiKey | quote }}
+            {{- end }}
+
+            # ── Legilux (optional) ────────────────────────────────────────
+            {{- if .Values.legilux.endpoint }}
+            - name: LEGILUX_ENDPOINT
+              value: {{ .Values.legilux.endpoint | quote }}
+            {{- end }}
+
+            # ── EUR-Lex (optional) ────────────────────────────────────────
+            {{- if .Values.eurlex.username }}
+            - name: EURLEX_USERNAME
+              value: {{ .Values.eurlex.username | quote }}
+            - name: EURLEX_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "app.fullname" . }}-secret
+                  key: eurlex-password
+                  optional: true
+            {{- end }}
+
+            # ── S3 / Object Storage (optional) ───────────────────────────
+            {{- if .Values.s3.bucket }}
+            - name: S3_BUCKET
+              value: {{ .Values.s3.bucket | quote }}
+            - name: S3_ENDPOINT_URL
+              value: {{ .Values.s3.endpointUrl | quote }}
+            - name: AWS_ACCESS_KEY_ID
+              value: {{ .Values.s3.accessKeyId | quote }}
+            - name: AWS_SECRET_ACCESS_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "app.fullname" . }}-secret
+                  key: s3-secret-access-key
+                  optional: true
+            {{- end }}
+
+            # ── Celery background jobs (optional) ─────────────────────────
+            {{- if .Values.celery.enabled }}
+            - name: CELERY_BROKER_URL
+              value: {{ .Values.celery.brokerUrl | quote }}
+            - name: CELERY_RESULT_BACKEND
+              value: {{ .Values.celery.resultBackend | quote }}
+            - name: IMPORT_DATASETS_CRON_SCHEDULE
+              value: {{ .Values.celery.importDatasetsCronSchedule | quote }}
+            {{- end }}
+
+            # ── Source instance dataset sync (optional) ───────────────────
+            {{- if .Values.sourceInstance.url }}
+            - name: SOURCE_INSTANCE_URL
+              value: {{ .Values.sourceInstance.url | quote }}
+            - name: SOURCE_INSTANCE_NAME
+              value: {{ .Values.sourceInstance.name | quote }}
+            - name: SOURCE_DATASET_URL_PATTERN
+              value: {{ .Values.sourceInstance.datasetUrlPattern | quote }}
+            - name: SYNC_USER_ID
+              value: {{ .Values.sourceInstance.syncUserId | quote }}
+            {{- end }}
+            {{- if .Values.sourceInstance.oidcIssuerUrl }}
+            - name: SOURCE_OIDC_ISSUER_URL
+              value: {{ .Values.sourceInstance.oidcIssuerUrl | quote }}
+            - name: SOURCE_SERVICE_ACCOUNT_CLIENT_ID
+              value: {{ .Values.sourceInstance.serviceAccountClientId | quote }}
+            - name: SOURCE_SERVICE_ACCOUNT_CLIENT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "app.fullname" . }}-secret
+                  key: source-service-account-client-secret
+                  optional: true
+            {{- end }}
+
+            # ── Misc (optional) ───────────────────────────────────────────
+            {{- if .Values.defaultAccessUrl }}
+            - name: DEFAULT_ACCESS_URL
+              value: {{ .Values.defaultAccessUrl | quote }}
+            {{- end }}
+
+          ports:
+            - name: http
+              containerPort: {{ .Values.service.port }}
+              protocol: TCP
+
+          livenessProbe:
+            httpGet:
+              path: {{ .Values.probes.path }}
+              port: http
+            initialDelaySeconds: {{ .Values.probes.initialDelaySeconds }}
+            periodSeconds: {{ .Values.probes.periodSeconds }}
+          readinessProbe:
+            httpGet:
+              path: {{ .Values.probes.path }}
+              port: http
+            initialDelaySeconds: {{ .Values.probes.initialDelaySeconds }}
+            periodSeconds: {{ .Values.probes.periodSeconds }}
+
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+
+          volumeMounts:
+            - name: config-json
+              mountPath: /config
+              readOnly: true
+
+      volumes:
+        - name: config-json
+          configMap:
+            name: {{ include "app.fullname" . }}-config
+
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- if .Values.restartPolicy }}
+      restartPolicy: {{ .Values.restartPolicy }}
+      {{- end }}

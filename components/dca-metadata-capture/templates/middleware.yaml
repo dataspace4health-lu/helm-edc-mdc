@@ -1,0 +1,61 @@
+{{- if .Values.ingress.replacePath }}
+# Strip the ingress path prefix before forwarding to the app
+apiVersion: traefik.io/v1alpha1
+kind: Middleware
+metadata:
+  name: {{ include "app.chartname" . }}-replacepathregex
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "app.labels" . | nindent 4 }}
+spec:
+  replacePathRegex:
+    regex: {{ .Values.ingress.replacePath.regex }}
+    replacement: {{ .Values.ingress.replacePath.replacement }}
+{{- end }}
+{{- if .Values.ingress.replaceBody }}
+---
+# Rewrite hardcoded Vite asset paths in HTML responses so the browser requests
+# /dca/assets/... instead of /assets/...
+apiVersion: traefik.io/v1alpha1
+kind: Middleware
+metadata:
+  name: {{ include "app.chartname" . }}-replacebodyregex
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "app.labels" . | nindent 4 }}
+spec:
+  plugin:
+    rewriteBody:
+      rewrites:
+        - regex: {{ .Values.ingress.replaceBody.regex | quote }}
+          replacement: {{ .Values.ingress.replaceBody.replacement | quote }}
+      logLevel: {{ default 0 .Values.ingress.replaceBody.logLevel }}
+      {{- if .Values.ingress.replaceBody.monitoring }}
+      monitoring:
+        {{- if .Values.ingress.replaceBody.monitoring.methods }}
+        methods:
+          {{- range .Values.ingress.replaceBody.monitoring.methods }}
+          - {{ . | quote }}
+          {{- end }}
+        {{- end }}
+        {{- if .Values.ingress.replaceBody.monitoring.types }}
+        types:
+          {{- range .Values.ingress.replaceBody.monitoring.types }}
+          - {{ . | quote }}
+          {{- end }}
+        {{- end }}
+      {{- end }}
+{{- end }}
+{{- if .Values.ingress.headers }}
+---
+apiVersion: traefik.io/v1alpha1
+kind: Middleware
+metadata:
+  name: {{ include "app.chartname" . }}-headers
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "app.labels" . | nindent 4 }}
+spec:
+  headers:
+{{ toYaml .Values.ingress.headers | indent 4 }}
+{{- end }}

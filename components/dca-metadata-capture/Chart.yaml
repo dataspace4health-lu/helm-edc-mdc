@@ -1,0 +1,20 @@
+apiVersion: v2
+name: dca-metadata-capture
+description: A Helm chart for the DCA Metadata Capture application (FastAPI backend + Vite frontend).
+type: application
+
+# Chart version - increment on every chart change
+version: 1.0.0
+
+# Application version (matches the Docker image tag)
+appVersion: "2.0.0"
+
+dependencies:
+  - name: postgresql
+    version: 15.2.10
+    repository: "oci://registry-1.docker.io/bitnamicharts"
+    condition: postgresql.enabled
+  - name: keycloak
+    version: 25.2.0
+    repository: "oci://registry-1.docker.io/bitnamicharts"
+    condition: keycloak.enabled

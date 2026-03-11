@@ -1,0 +1,12 @@
+{{- if .Values.createRealmConfigMap }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: keycloak-realm
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "app.labels" . | nindent 4 }}
+data:
+  dca-metadata-capture-local-realm.json: |-
+{{ .Files.Get "dca-metadata-capture-local-realm.json" | indent 4 }}
+{{- end }}
