@@ -1,0 +1,135 @@
+# Default values for dcat-to-edc-sync.
+# This is a YAML-formatted file.
+
+name: dcat-to-edc-sync
+
+image:
+  repository: ds4h-registry:5432/dcat-to-edc-sync
+  pullPolicy: Always
+  tag: "0.0.0"
+
+imagePullSecrets: []
+nameOverride: ""
+
+# -----------------------------------------------------------------------
+# CronJob configuration
+# -----------------------------------------------------------------------
+cronJob:
+  # Cron schedule expression (default: every 5 minutes)
+  schedule: "*/5 * * * *"
+  # Number of successful job runs to retain
+  successfulJobsHistoryLimit: 3
+  # Number of failed job runs to retain
+  failedJobsHistoryLimit: 3
+  # Concurrency policy: Forbid, Allow, Replace
+  concurrencyPolicy: Forbid
+  # Deadline in seconds for starting the job if it missed a scheduled time
+  startingDeadlineSeconds: 120
+  # Restart policy for the pod
+  restartPolicy: OnFailure
+  # Job backoff limit (retries)
+  backoffLimit: 2
+  # Active deadline seconds (timeout for the entire job)
+  activeDeadlineSeconds: 600
+
+# -----------------------------------------------------------------------
+# DCAT (Metadata Capture) connection
+# -----------------------------------------------------------------------
+dcat:
+  # Base URL for the DCAT metadata capture API.
+  # Within the cluster this is the Kubernetes service name + port.
+  baseUrl: "http://dca-metadata-capture:8000"
+
+# -----------------------------------------------------------------------
+# EDC Connector connection
+# -----------------------------------------------------------------------
+edc:
+  # EDC controlplane Management API URL.
+  # Uses cross-namespace DNS: <service>.<namespace>.svc.cluster.local
+  managementUrl: "http://edc-controlplane.edc-holder1.svc.cluster.local:9192/edc/cp/management/api"
+  # API key for EDC Management API (leave empty if no auth is required)
+  apiKey: ""
+
+# -----------------------------------------------------------------------
+# Keycloak / OAuth2 service account for DCAT API authentication
+# -----------------------------------------------------------------------
+keycloak:
+  # Set to false to disable Keycloak authentication (e.g. if DCAT API
+  # is open or uses a different auth mechanism).
+  enabled: true
+  tokenUrl: "https://dataspace4health.local/iam/realms/dca-metadata-capture-local/protocol/openid-connect/token"
+  # Use the bot service account client (bot-mdc-service-client) which has the
+  # BOT_USER role and is accepted by the DCAT API for Bearer token auth.
+  clientId: "bot-mdc-service-client"
+  # Client secret – override in a secret or custom values file
+  clientSecret: ""
+  # (optional) Token audience
+  audience: "dca-metadata-capture-local"
+  # OAuth2 grant type: "client_credentials" (default/production)
+  grantType: "client_credentials"
+  # Username for password grant (testing only – not used for client_credentials)
+  username: ""
+
+# -----------------------------------------------------------------------
+# Sync behaviour
+# -----------------------------------------------------------------------
+sync:
+  # Run mode inside the container:
+  #   0     = run once and exit (recommended for CronJob)
+  #   > 0   = run as long-lived loop with this interval in seconds
+  interval: "0"
+  # Set to "true" to log changes without applying them to EDC
+  dryRun: "false"
+  # State file path inside the container (PVC mount recommended for persistence)
+  stateFile: "/data/sync-state.json"
+
+# -----------------------------------------------------------------------
+# TLS verification
+# -----------------------------------------------------------------------
+tls:
+  # Set to "false" to skip TLS verification (dev/test only)
+  verify: "false"
+
+# -----------------------------------------------------------------------
+# Logging
+# -----------------------------------------------------------------------
+logLevel: "INFO"
+
+# -----------------------------------------------------------------------
+# Persistent volume for sync state
+# -----------------------------------------------------------------------
+persistence:
+  enabled: true
+  # Use an existing PVC or let the chart create one
+  existingClaim: ""
+  storageClass: ""
+  accessModes:
+    - ReadWriteOnce
+  size: 100Mi
+
+# -----------------------------------------------------------------------
+# Resources
+# -----------------------------------------------------------------------
+resources:
+  requests:
+    cpu: 50m
+    memory: 64Mi
+  limits:
+    cpu: 200m
+    memory: 256Mi
+
+# -----------------------------------------------------------------------
+# Secrets (for sensitive values) – these are injected into a
+# Kubernetes Secret and mounted as environment variables.
+# Override with real values or use External Secrets Operator.
+# -----------------------------------------------------------------------
+secrets:
+  edcApiKey: ""
+  # bot-mdc-service-client secret (client_credentials grant)
+  keycloakClientSecret: "bot-service-secret-key-12345"
+  # Password for KEYCLOAK_GRANT_TYPE=password (testing only, not used)
+  keycloakPassword: ""
+
+nodeSelector: {}
+tolerations: []
+affinity: {}
