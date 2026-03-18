@@ -46,7 +46,7 @@ dcat:
 edc:
   # EDC controlplane Management API URL.
   # Uses cross-namespace DNS: <service>.<namespace>.svc.cluster.local
-  managementUrl: "http://edc-controlplane.edc-holder1.svc.cluster.local:9192/edc/cp/management/api"
+  managementUrl: "http://edc-controlplane:9192/edc/cp/management/api"
   # API key for EDC Management API (leave empty if no auth is required)
   apiKey: ""
 
