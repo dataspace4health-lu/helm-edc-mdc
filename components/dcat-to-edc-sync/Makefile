@@ -67,3 +67,19 @@ all: docker install
 
 .PHONY: reinstall
 reinstall: uninstall install
+
+# ── Operations ────────────────────────────────────────────────────────────────
+
+# Force re-sync a single MDC dataset.
+# Usage: make resync DATASET=1
+DATASET ?= 1
+.PHONY: resync
+resync:
+	@chmod +x resync.sh
+	NAMESPACE=$(NAMESPACE) RELEASE=$(HELM_RELEASE) bash resync.sh $(DATASET)
+
+# Print the current sync state (what has been synced and status per asset).
+.PHONY: state
+state:
+	@chmod +x show-state.sh
+	NAMESPACE=$(NAMESPACE) RELEASE=$(HELM_RELEASE) bash show-state.sh
