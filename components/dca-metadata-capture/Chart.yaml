@@ -4,7 +4,7 @@ description: A Helm chart for the DCA Metadata Capture application (FastAPI back
 type: application
 
 # Chart version - increment on every chart change
-version: 1.0.0
+version: 0.0.0
 
 # Application version (matches the Docker image tag)
 appVersion: "2.0.0"
