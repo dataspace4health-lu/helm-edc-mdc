@@ -117,6 +117,12 @@ oidc:
   # Client ID registered in Keycloak — matches the e2e realm
   clientId: dca-metadata-capture-local
   # Set clientSecret in secrets.oidcClientSecret below
+  # Bot / service-account auth (enables Bearer-token access for the sync job).
+  # Set to the Keycloak client_id of the machine-to-machine service account.
+  # Leave empty to disable service-account authentication.
+  botServiceClientId: "bot-mdc-service-client"
+  # Audience expected in the bot JWT (defaults to oidc.clientId when empty).
+  botServiceAudience: "dca-metadata-capture-local"
   # Local Keycloak realm: dca-metadata-capture-local
   authUrl: https://dataspace4health.local/iam/realms/dca-metadata-capture-local/protocol/openid-connect/auth
   tokenUrl: https://dataspace4health.local/iam/realms/dca-metadata-capture-local/protocol/openid-connect/token

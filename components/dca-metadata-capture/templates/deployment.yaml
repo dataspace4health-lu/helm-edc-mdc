@@ -129,6 +129,14 @@ spec:
             - name: OPENID_VERIFY
               value: {{ .Values.oidc.verify | quote }}
 
+            # ── Bot / service-account authentication (optional) ──────────
+            {{- if .Values.oidc.botServiceClientId }}
+            - name: BOT_SERVICE_CLIENT_ID
+              value: {{ .Values.oidc.botServiceClientId | quote }}
+            - name: BOT_SERVICE_AUDIENCE
+              value: {{ .Values.oidc.botServiceAudience | default .Values.oidc.clientId | quote }}
+            {{- end }}
+
             # ── Session ──────────────────────────────────────────────────
             - name: SESSION_SECRET_KEY
               valueFrom:

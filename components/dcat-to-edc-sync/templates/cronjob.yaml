@@ -1,0 +1,124 @@
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: {{ include "sync.fullname" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "sync.labels" . | nindent 4 }}
+spec:
+  schedule: {{ .Values.cronJob.schedule | quote }}
+  successfulJobsHistoryLimit: {{ .Values.cronJob.successfulJobsHistoryLimit }}
+  failedJobsHistoryLimit: {{ .Values.cronJob.failedJobsHistoryLimit }}
+  concurrencyPolicy: {{ .Values.cronJob.concurrencyPolicy }}
+  {{- if .Values.cronJob.startingDeadlineSeconds }}
+  startingDeadlineSeconds: {{ .Values.cronJob.startingDeadlineSeconds }}
+  {{- end }}
+  jobTemplate:
+    metadata:
+      labels:
+        {{- include "sync.selectorLabels" . | nindent 8 }}
+    spec:
+      backoffLimit: {{ .Values.cronJob.backoffLimit }}
+      {{- if .Values.cronJob.activeDeadlineSeconds }}
+      activeDeadlineSeconds: {{ .Values.cronJob.activeDeadlineSeconds }}
+      {{- end }}
+      template:
+        metadata:
+          labels:
+            {{- include "sync.selectorLabels" . | nindent 12 }}
+        spec:
+          {{- with .Values.imagePullSecrets }}
+          imagePullSecrets:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          restartPolicy: {{ .Values.cronJob.restartPolicy }}
+          containers:
+            - name: sync
+              image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+              imagePullPolicy: {{ .Values.image.pullPolicy }}
+              env:
+                # ---- DCAT connection ----
+                - name: DCAT_BASE_URL
+                  value: {{ .Values.dcat.baseUrl | quote }}
+
+                # ---- EDC connection ----
+                - name: EDC_MANAGEMENT_URL
+                  value: {{ .Values.edc.managementUrl | quote }}
+                - name: EDC_API_KEY
+                  valueFrom:
+                    secretKeyRef:
+                      name: {{ include "sync.fullname" . }}-secret
+                      key: edc-api-key
+
+                # ---- Keycloak / OAuth2 ----
+                {{- if .Values.keycloak.enabled }}
+                - name: KEYCLOAK_TOKEN_URL
+                  value: {{ .Values.keycloak.tokenUrl | quote }}
+                - name: KEYCLOAK_CLIENT_ID
+                  value: {{ .Values.keycloak.clientId | quote }}
+                - name: KEYCLOAK_CLIENT_SECRET
+                  valueFrom:
+                    secretKeyRef:
+                      name: {{ include "sync.fullname" . }}-secret
+                      key: keycloak-client-secret
+                {{- if .Values.keycloak.audience }}
+                - name: KEYCLOAK_AUDIENCE
+                  value: {{ .Values.keycloak.audience | quote }}
+                {{- end }}
+                {{- if .Values.keycloak.grantType }}
+                - name: KEYCLOAK_GRANT_TYPE
+                  value: {{ .Values.keycloak.grantType | quote }}
+                {{- end }}
+                {{- if .Values.keycloak.username }}
+                - name: KEYCLOAK_USERNAME
+                  value: {{ .Values.keycloak.username | quote }}
+                - name: KEYCLOAK_PASSWORD
+                  valueFrom:
+                    secretKeyRef:
+                      name: {{ include "sync.fullname" . }}-secret
+                      key: keycloak-password
+                {{- end }}
+                {{- end }}
+
+                # ---- Sync settings ----
+                - name: SYNC_INTERVAL
+                  value: {{ .Values.sync.interval | quote }}
+                - name: SYNC_DRY_RUN
+                  value: {{ .Values.sync.dryRun | quote }}
+                - name: SYNC_STATE_FILE
+                  value: {{ .Values.sync.stateFile | quote }}
+                - name: LOG_LEVEL
+                  value: {{ .Values.logLevel | quote }}
+                - name: TLS_VERIFY
+                  value: {{ .Values.tls.verify | quote }}
+
+              {{- with .Values.resources }}
+              resources:
+                {{- toYaml . | nindent 16 }}
+              {{- end }}
+
+              {{- if .Values.persistence.enabled }}
+              volumeMounts:
+                - name: state
+                  mountPath: /data
+              {{- end }}
+
+          {{- if .Values.persistence.enabled }}
+          volumes:
+            - name: state
+              persistentVolumeClaim:
+                claimName: {{ .Values.persistence.existingClaim | default (printf "%s-state" (include "sync.fullname" .)) }}
+          {{- end }}
+
+          {{- with .Values.nodeSelector }}
+          nodeSelector:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- with .Values.affinity }}
+          affinity:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- with .Values.tolerations }}
+          tolerations:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
