@@ -490,7 +490,7 @@ keycloak:
     tag: 26.3.3-debian-12-r0
   auth:
     adminUser: admin
-    adminPassword: "xfsc4Ntt!"
+    adminPassword: "password"
   extraEnvVars:
     - name: KEYCLOAK_EXTRA_ARGS
       value: "--import-realm"
@@ -526,8 +526,8 @@ keycloak:
     auth:
       database: keycloak
       username: keycloak
-      password: "xfsc4Ntt!"
-      postgresPassword: "xfsc4Ntt!"
+      password: "password"
+      postgresPassword: "password"
     primary:
       persistence:
         size: 5Gi
